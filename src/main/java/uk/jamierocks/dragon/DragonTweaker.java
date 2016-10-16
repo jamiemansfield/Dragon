@@ -32,7 +32,11 @@ import org.apache.logging.log4j.Logger;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.util.Arrays;
 import java.util.List;
 import java.util.jar.JarFile;
@@ -45,12 +49,10 @@ public abstract class DragonTweaker implements ITweaker {
 
     static final Logger LOGGER = LogManager.getLogger("Dragon");
 
-    private List<String> args;
     protected File dragonDir;
 
     @Override
     public void acceptOptions(List<String> args, File gameDir, File assetsDir, String profile) {
-        this.args = args;
         this.dragonDir = new File(gameDir, "dragon");
         if (!this.dragonDir.exists()) {
             this.dragonDir.mkdirs();
@@ -66,12 +68,18 @@ public abstract class DragonTweaker implements ITweaker {
 
     @Override
     public String[] getLaunchArguments() {
-        return this.args.toArray(new String[this.args.size()]);
+        return new String[]{};
     }
 
     private void loadTweaker(File tweaker) {
-        final List<ITweaker> tweakers = (List<ITweaker>) Launch.blackboard.get("Tweaks");
-
+        try {
+            Method addUrl = URLClassLoader.class.getDeclaredMethod("addURL", URL.class);
+            addUrl.setAccessible(true);
+            addUrl.invoke(Launch.classLoader.getClass().getClassLoader(), tweaker.toURI().toURL());
+        } catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException | MalformedURLException e) {
+            e.printStackTrace();
+            return;
+        }
         try {
             Launch.classLoader.addURL(tweaker.toURI().toURL());
         } catch (MalformedURLException e) {
@@ -85,14 +93,7 @@ public abstract class DragonTweaker implements ITweaker {
             final String tweakClassName = manifest.getMainAttributes().getValue("TweakClass");
 
             if (tweakClassName != null && !tweakClassName.isEmpty()) {
-                try {
-                    final Class tweakClass = Class.forName(tweakClassName, false, Launch.classLoader);
-                    final ITweaker tweak = (ITweaker) tweakClass.newInstance();
-
-                    tweakers.add(tweak);
-                } catch (ClassNotFoundException | InstantiationException | IllegalAccessException e) {
-                    e.printStackTrace();
-                }
+                ((List<String>) Launch.blackboard.get("TweakClasses")).add(tweakClassName);
             }
         } catch (IOException e) {
             e.printStackTrace();
