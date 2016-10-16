@@ -63,7 +63,12 @@ public abstract class DragonTweaker implements ITweaker {
     public void injectIntoClassLoader(LaunchClassLoader classLoader) {
         LOGGER.info("Initialising Dragon...");
 
-        Arrays.stream(this.dragonDir.listFiles((dir, name) -> name.endsWith(".jar"))).forEach(this::loadTweaker);
+        final File[] jars = this.dragonDir.listFiles((dir, name) -> name.endsWith(".jar"));
+        if (jars != null) {
+            Arrays.asList(jars).forEach(this::loadTweaker);
+        }
+
+        LOGGER.info("Finished initialising Dragon. Launching Minecraft...");
     }
 
     @Override
@@ -72,31 +77,39 @@ public abstract class DragonTweaker implements ITweaker {
     }
 
     private void loadTweaker(File tweaker) {
+        LOGGER.info("Found tweaker candidate: " + tweaker.getName());
+
+        final JarFile jarFile;
+        final Manifest manifest;
+
+        try {
+            jarFile = new JarFile(tweaker);
+            manifest = jarFile.getManifest();
+        } catch (IOException e) {
+            LOGGER.error("Failed to get jar info for " + tweaker.getName(), e);
+            return;
+        }
+
         try {
             Method addUrl = URLClassLoader.class.getDeclaredMethod("addURL", URL.class);
             addUrl.setAccessible(true);
             addUrl.invoke(Launch.classLoader.getClass().getClassLoader(), tweaker.toURI().toURL());
         } catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException | MalformedURLException e) {
-            e.printStackTrace();
+            LOGGER.error("Failed to add " + tweaker.getName() + "to the classloader!", e);
             return;
         }
+
         try {
             Launch.classLoader.addURL(tweaker.toURI().toURL());
         } catch (MalformedURLException e) {
-            e.printStackTrace();
+            LOGGER.error("Failed to add " + tweaker.getName() + "to the classloader!", e);
             return;
         }
 
-        try {
-            final JarFile jarFile = new JarFile(tweaker);
-            final Manifest manifest = jarFile.getManifest();
-            final String tweakClassName = manifest.getMainAttributes().getValue("TweakClass");
-
-            if (tweakClassName != null && !tweakClassName.isEmpty()) {
-                ((List<String>) Launch.blackboard.get("TweakClasses")).add(tweakClassName);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
+        final String tweakClassName = manifest.getMainAttributes().getValue("TweakClass");
+        if (tweakClassName != null && !tweakClassName.isEmpty()) {
+            LOGGER.info("Found tweaker: " + tweakClassName + " (" + tweaker.getName() + ")");
+            ((List<String>) Launch.blackboard.get("TweakClasses")).add(tweakClassName);
         }
     }
 
